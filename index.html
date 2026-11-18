@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super CRM</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen" x-data="crmApp()">
+
+    <div class="max-w-5xl mx-auto p-6">
+        <!-- Header & Navigation -->
+        <header class="flex flex-col md:flex-row justify-between items-center mb-8 bg-white p-4 rounded-xl shadow-sm border gap-4">
+            <h1 class="text-2xl font-bold text-indigo-600 cursor-pointer" @click="goToTab('orgs')">Super CRM</h1>
+            <div class="flex flex-wrap items-center gap-2">
+                <button @click="goToTab('orgs')" :class="activeTab === 'orgs' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700'" class="px-4 py-2 rounded-lg font-medium transition text-sm">Organizations</button>
+                <button @click="goToTab('people')" :class="activeTab === 'people' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700'" class="px-4 py-2 rounded-lg font-medium transition text-sm">People</button>
+                <button @click="goToTab('interactions')" :class="activeTab === 'interactions' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700'" class="px-4 py-2 rounded-lg font-medium transition text-sm">Interactions</button>
+                <button @click="showConfig = !showConfig" class="px-3 py-2 bg-gray-100 rounded-lg text-sm">⚙️</button>
+            </div>
+        </header>
+
+        <!-- Configuration Settings Box -->
+        <div x-show="showConfig" class="mb-6 bg-white p-4 rounded-xl shadow border space-y-3">
+            <h3 class="font-bold text-sm">Configuration Settings</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input type="text" x-model="supabaseUrl" placeholder="Supabase URL" class="border p-2 rounded text-sm">
+                <input type="password" x-model="supabaseKey" placeholder="Supabase Anon Key" class="border p-2 rounded text-sm">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Default Logged-In User (Your Person ID):</label>
+                <select x-model="currentUserId" @change="saveCurrentUser()" class="border p-2 rounded text-sm w-full md:w-1/2">
+                    <option value="">-- Select Who You Are --</option>
+                    <template x-for="p in people" :key="p.id">
+                        <option :value="p.id" x-text="p.first_name + ' ' + p.last_name"></option>
+                    </template>
+                </select>
+            </div>
+            <button @click="saveConfig()" class="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-medium">Save Settings</button>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 1: ORGANIZATIONS                       -->
+        <!-- ========================================== -->
+        <div x-show="activeTab === 'orgs'">
+            <!-- List View -->
+            <div x-show="viewMode === 'list'">
+                <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-3">
+                    <h2 class="text-xl font-semibold">Organizations</h2>
+                    <button @click="openOrgForm()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700">+ Add Organization</button>
+                </div>
+
+                <div class="flex flex-wrap gap-3 mb-4 bg-white p-3 rounded-xl shadow-sm border text-sm">
+                    <input type="text" x-model="orgSearch" placeholder="Search organizations..." class="border p-2 rounded flex-1 min-w-[200px]">
+                    <select x-model="orgStatusFilter" class="border p-2 rounded">
+                        <option value="">All Statuses</option>
+                        <option value="research">Research</option>
+                        <option value="contact">Contact</option>
+                        <option value="poor fit">Poor Fit</option>
+                        <option value="unresponsive">Unresponsive</option>
+                        <option value="partner">Partner</option>
+                        <option value="archived">Archived</option>
+                    </select>
+                    <select x-model="orgSortBy" class="border p-2 rounded">
+                        <option value="name-asc">Name (A-Z)</option>
+                        <option value="name-desc">Name (Z-A)</option>
+                        <option value="status">Status</option>
+                    </select>
+                </div>
+
+                <div class="bg-white rounded-xl shadow border overflow-hidden">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-600 text-sm">
+                                <th class="p-3">Name</th>
+                                <th class="p-3">Status</th>
+                                <th class="p-3">Website</th>
+                                <th class="p-3">Primary Contact</th>
+                                <th class="p-3 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="org in filteredOrgs" :key="org.id">
+                                <tr class="border-t hover:bg-gray-50 cursor-pointer" @click="viewOrgDetail(org.id)">
+                                    <td class="p-3 font-medium text-indigo-600" x-text="org.name"></td>
+                                    <td class="p-3 text-xs"><span class="px-2 py-1 rounded font-semibold uppercase" :class="getStatusBadgeClass(org.status)" x-text="org.status || 'research'"></span></td>
+                                    <td class="p-3 text-sm text-blue-600"><a :href="org.website" target="_blank" @click.stop x-text="org.website"></a></td>
+                                    <td class="p-3 text-sm" x-text="getPersonName(org.primary_contact_id)"></td>
+                                    <td class="p-3 text-sm text-right">
+                                        <button @click.stop="editOrg(org)" class="text-gray-600 hover:text-indigo-600 mr-2">Edit</button>
+                                        <button @click.stop="deleteOrg(org.id)" class="text-red-500 hover:text-red-700">Delete</button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Detail View -->
+            <div x-show="viewMode === 'detail' && selectedOrg" class="bg-white p-6 rounded-xl shadow border">
+                <div class="flex justify-between items-start mb-6 border-b pb-4">
+                    <div>
+                        <button @click="viewMode = 'list'" class="text-sm text-indigo-600 mb-2 inline-block font-medium">&larr; Back to Organizations</button>
+                        <div class="flex gap-3 items-center">
+                            <h2 class="text-2xl font-bold text-gray-900" x-text="selectedOrg.name"></h2>
+                            <span class="px-2.5 py-0.5 rounded text-xs font-semibold uppercase" :class="getStatusBadgeClass(selectedOrg.status)" x-text="selectedOrg.status || 'research'"></span>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-1" x-text="selectedOrg.description"></p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button @click="openInteractionFormForOrg(selectedOrg.id)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">+ Log Interaction</button>
+                        <button @click="editOrg(selectedOrg)" class="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-lg text-sm font-medium">Edit</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-sm">
+                    <div><span class="font-semibold text-gray-500 block">Website</span> <a :href="selectedOrg.website" target="_blank" class="text-blue-600" x-text="selectedOrg.website || '—'"></a></div>
+                    <div><span class="font-semibold text-gray-500 block">Phone</span> <span x-text="selectedOrg.phone || '—'"></span></div>
+                    <div><span class="font-semibold text-gray-500 block">Primary Contact</span> <span class="text-indigo-600 cursor-pointer" @click="if(selectedOrg.primary_contact_id) viewPersonDetail(selectedOrg.primary_contact_id)" x-text="getPersonName(selectedOrg.primary_contact_id)"></span></div>
+                    <div class="md:col-span-2">
+                        <span class="font-semibold text-gray-500 block mb-1">Misc Info (Rich Text)</span>
+                        <div class="bg-gray-50 p-3 rounded border text-gray-700 whitespace-pre-wrap" x-text="selectedOrg.misc || 'No additional info.'"></div>
+                    </div>
+                </div>
+
+                <!-- Related People -->
+                <div class="mb-8">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-lg font-semibold">Associated People</h3>
+                        <button @click="openPersonFormWithOrg(selectedOrg.id)" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded font-medium hover:bg-indigo-100">+ Add Person</button>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg border divide-y">
+                        <template x-for="p in getPeopleForOrg(selectedOrg.id)" :key="p.id">
+                            <div class="p-3 flex justify-between items-center hover:bg-gray-100 cursor-pointer" @click="viewPersonDetail(p.id)">
+                                <div>
+                                    <span class="font-medium text-indigo-600" x-text="p.first_name + ' ' + p.last_name"></span>
+                                    <span class="text-xs text-gray-500 ml-2" x-text="p.role"></span>
+                                </div>
+                                <span class="text-xs text-gray-400" x-text="p.email"></span>
+                            </div>
+                        </template>
+                        <div x-show="getPeopleForOrg(selectedOrg.id).length === 0" class="p-4 text-sm text-gray-500 text-center">No people linked to this organization.</div>
+                    </div>
+                </div>
+
+                <!-- Related Interactions -->
+                <div>
+                    <h3 class="text-lg font-semibold mb-3">Interactions History</h3>
+                    <div class="space-y-3">
+                        <template x-for="item in getInteractionsForOrg(selectedOrg.id)" :key="item.id">
+                            <div class="bg-gray-50 p-3 rounded border text-sm cursor-pointer hover:border-indigo-300" @click="viewInteractionDetail(item.id)">
+                                <div class="flex justify-between text-xs text-gray-500 mb-1">
+                                    <span class="font-semibold uppercase text-indigo-600" x-text="item.medium"></span>
+                                    <span x-text="new Date(item.interaction_date || item.due_date).toLocaleString()"></span>
+                                </div>
+                                <div class="text-gray-700" x-text="item.notes"></div>
+                            </div>
+                        </template>
+                        <div x-show="getInteractionsForOrg(selectedOrg.id).length === 0" class="p-4 text-sm text-gray-500 text-center bg-gray-50 rounded border">No interactions recorded.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Form View -->
+            <div x-show="viewMode === 'form'" class="bg-white p-6 rounded-xl shadow border max-w-2xl mx-auto">
+                <h2 class="text-xl font-bold mb-4" x-text="formOrg.id ? 'Edit Organization' : 'New Organization'"></h2>
+                <form @submit.prevent="saveOrg()" class="space-y-4 text-sm">
+                    <div>
+                        <label class="block font-semibold mb-1">Organization Name *</label>
+                        <input type="text" x-model="formOrg.name" required class="w-full border p-2 rounded">
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Status</label>
+                        <select x-model="formOrg.status" class="w-full border p-2 rounded">
+                            <option value="research">Research</option>
+                            <option value="contact">Contact</option>
+                            <option value="poor fit">Poor Fit</option>
+                            <option value="unresponsive">Unresponsive</option>
+                            <option value="partner">Partner</option>
+                            <option value="archived">Archived</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Description</label>
+                        <textarea x-model="formOrg.description" rows="2" class="w-full border p-2 rounded"></textarea>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block font-semibold mb-1">Website</label>
+                            <input type="text" x-model="formOrg.website" class="w-full border p-2 rounded">
+                        </div>
+                        <div>
+                            <label class="block font-semibold mb-1">Phone</label>
+                            <input type="text" x-model="formOrg.phone" class="w-full border p-2 rounded">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Primary Contact</label>
+                        <select x-model="formOrg.primary_contact_id" class="w-full border p-2 rounded">
+                            <option value="">-- Select Primary Contact --</option>
+                            <template x-for="p in people" :key="p.id">
+                                <option :value="p.id" x-text="p.first_name + ' ' + p.last_name"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Misc Info (Rich Text)</label>
+                        <textarea x-model="formOrg.misc" rows="4" class="w-full border p-2 rounded"></textarea>
+                    </div>
+                    <div class="flex justify-end space-x-3 pt-4">
+                        <button type="button" @click="viewMode = formOrg.id ? 'detail' : 'list'" class="bg-gray-100 px-4 py-2 rounded font-medium">Cancel</button>
+                        <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded font-medium hover:bg-indigo-700">Save Organization</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 2: PEOPLE                              -->
+        <!-- ========================================== -->
+        <div x-show="activeTab === 'people'">
+            <!-- List View -->
+            <div x-show="viewMode === 'list'">
+                <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-3">
+                    <h2 class="text-xl font-semibold">People</h2>
+                    <button @click="openPersonForm()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700">+ Add Person</button>
+                </div>
+
+                <div class="mb-4 bg-white p-3 rounded-xl shadow-sm border text-sm">
+                    <input type="text" x-model="peopleSearch" placeholder="Search people by name, email, or role..." class="border p-2 rounded w-full">
+                </div>
+
+                <div class="bg-white rounded-xl shadow border overflow-hidden">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-600 text-sm">
+                                <th class="p-3">Name</th>
+                                <th class="p-3">Role</th>
+                                <th class="p-3">Organization</th>
+                                <th class="p-3">Email</th>
+                                <th class="p-3 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="p in filteredPeople" :key="p.id">
+                                <tr class="border-t hover:bg-gray-50 cursor-pointer" @click="viewPersonDetail(p.id)">
+                                    <td class="p-3 font-medium text-indigo-600" x-text="p.first_name + ' ' + p.last_name"></td>
+                                    <td class="p-3 text-sm" x-text="p.role"></td>
+                                    <td class="p-3 text-sm text-indigo-600" @click.stop="viewOrgDetail(p.organization_id)" x-text="getOrgName(p.organization_id)"></td>
+                                    <td class="p-3 text-sm" x-text="p.email"></td>
+                                    <td class="p-3 text-sm text-right">
+                                        <button @click.stop="editPerson(p)" class="text-gray-600 hover:text-indigo-600 mr-2">Edit</button>
+                                        <button @click.stop="deletePerson(p.id)" class="text-red-500 hover:text-red-700">Delete</button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Detail View -->
+            <div x-show="viewMode === 'detail' && selectedPerson" class="bg-white p-6 rounded-xl shadow border">
+                <div class="flex justify-between items-start mb-6 border-b pb-4">
+                    <div>
+                        <button @click="viewMode = 'list'" class="text-sm text-indigo-600 mb-2 inline-block font-medium">&larr; Back to People</button>
+                        <h2 class="text-2xl font-bold text-gray-900" x-text="selectedPerson.first_name + ' ' + selectedPerson.last_name"></h2>
+                        <p class="text-sm text-gray-500 mt-1" x-text="selectedPerson.role"></p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button @click="openInteractionFormForPerson(selectedPerson)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">+ Log Interaction</button>
+                        <button @click="editPerson(selectedPerson)" class="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-lg text-sm font-medium">Edit</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-sm">
+                    <div><span class="font-semibold text-gray-500 block">Organization</span> <span class="text-indigo-600 cursor-pointer" @click="viewOrgDetail(selectedPerson.organization_id)" x-text="getOrgName(selectedPerson.organization_id)"></span></div>
+                    <div><span class="font-semibold text-gray-500 block">Email</span> <span x-text="selectedPerson.email || '—'"></span></div>
+                    <div><span class="font-semibold text-gray-500 block">Phone</span> <span x-text="selectedPerson.phone || '—'"></span></div>
+                </div>
+
+                <div>
+                    <h3 class="text-lg font-semibold mb-3">Interactions Involving This Person</h3>
+                    <div class="space-y-3">
+                        <template x-for="item in getInteractionsForPerson(selectedPerson.id)" :key="item.id">
+                            <div class="bg-gray-50 p-3 rounded border text-sm cursor-pointer hover:border-indigo-300" @click="viewInteractionDetail(item.id)">
+                                <div class="flex justify-between text-xs text-gray-500 mb-1">
+                                    <span class="font-semibold uppercase text-indigo-600" x-text="item.medium"></span>
+                                    <span x-text="new Date(item.interaction_date || item.due_date).toLocaleString()"></span>
+                                </div>
+                                <div class="text-gray-700" x-text="item.notes"></div>
+                            </div>
+                        </template>
+                        <div x-show="getInteractionsForPerson(selectedPerson.id).length === 0" class="p-4 text-sm text-gray-500 text-center bg-gray-50 rounded border">No interactions recorded for this person.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Form View -->
+            <div x-show="viewMode === 'form'" class="bg-white p-6 rounded-xl shadow border max-w-2xl mx-auto">
+                <h2 class="text-xl font-bold mb-4" x-text="formPerson.id ? 'Edit Person' : 'New Person'"></h2>
+                <form @submit.prevent="savePerson()" class="space-y-4 text-sm">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block font-semibold mb-1">First Name *</label>
+                            <input type="text" x-model="formPerson.first_name" required class="w-full border p-2 rounded">
+                        </div>
+                        <div>
+                            <label class="block font-semibold mb-1">Last Name *</label>
+                            <input type="text" x-model="formPerson.last_name" required class="w-full border p-2 rounded">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Organization</label>
+                        <select x-model="formPerson.organization_id" class="w-full border p-2 rounded">
+                            <option value="">-- Select Organization --</option>
+                            <template x-for="org in orgs" :key="org.id">
+                                <option :value="org.id" x-text="org.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-1">Role</label>
+                        <input type="text" x-model="formPerson.role" class="w-full border p-2 rounded">
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block font-semibold mb-1">Email</label>
+                            <input type="email" x-model="formPerson.email" class="w-full border p-2 rounded">
+                        </div>
+                        <div>
+                            <label class="block font-semibold mb-1">Phone</label>
+                            <input type="text" x-model="formPerson.phone" class="w-full border p-2 rounded">
+                        </div>
+                    </div>
+                    <div class="flex justify-end space-x-3 pt-4">
+                        <button type="button" @click="viewMode = formPerson.id ? 'detail' : 'list'" class="bg-gray-100 px-4 py-2 rounded font-medium">Cancel</button>
+                        <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded font-medium hover:bg-indigo-700">Save Person</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- TAB 3: INTERACTIONS                        -->
+        <!-- ========================================== -->
+        <div x-show="activeTab === 'interactions'">
+            <!-- List View -->
+            <div x-show="viewMode === 'list'">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">Interactions</h2>
+                    <button @click="openInteractionForm()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700">+ Log Interaction</button>
+                </div>
+
+                <div class="flex gap-2 mb-4 border-b pb-3">
+                    <button @click="interactionFilter = 'completed'" :class="interactionFilter === 'completed' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-700'" class="px-3 py-1.5 rounded-lg text-xs font-semibold">Completed History</button>
+                    <button @click="interactionFilter = 'upcoming'" :class="interactionFilter === 'upcoming' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700'" class="px-3 py-1.5 rounded-lg text-xs font-semibold">Upcoming</button>
+                    <button @click="interactionFilter = 'overdue'" :class="interactionFilter === 'overdue' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700'" class="px-3 py-1.5 rounded-lg text-xs font-semibold">Overdue</button>
+                </div>
+
+                <div class="space-y-4">
+                    <template x-for="item in filteredInteractions" :key="item.id">
+                        <div class="bg-white p-4 rounded-xl shadow border cursor-pointer hover:border-indigo-300" @click="viewInteractionDetail(item.id)">
+                            <div class="flex justify-between text-xs text-gray-500 mb-1">
+                                <div class="flex gap-2 items-center">
+                                    <span class="font-semibold uppercase text-indigo-600" x-text="item.medium"></span>
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-semibold" :class="getStatusBadgeClass(item.status)" x-text="item.status"></span>
+                                </div>
+                                <span x-text="new Date(item.interaction_date || item.due_date).toLocaleString()"></span>
+                            </div>
+                            <div class="text-sm font-medium text-gray-800 mb-1">
+                                Org: <span class="text-indigo-600" x-text="getOrgName(item.organization_id)"></span> 
+                                <span class="text-gray-400 mx-2">|</span> 
+                                Assigned To: <span class="text-gray-700" x-text="getPersonName(item.assigned_to)"></span>
+                            </div>
+                            <div class="text-sm text-gray-700 bg-gray-50 p-3 rounded" x-text="item.notes"></div>
+                        </div>
+                    </template>
+                    <div x-show="filteredInteractions.length === 0" class="p-8 text-sm text-gray-500 text-center bg-white rounded-xl border">No interactions found for this filter.</div>
+                </div>
+            </div>
+
+            <!-- Detail View -->
+            <div x-show="viewMode === 'detail' && selectedInteraction" class="bg-white p-6 rounded-xl shadow border">
+                <div class="flex justify-between items-start mb-6 border-b pb-4">
+                    <div>
+                        <button @click="viewMode = 'list'" class="text-sm text-indigo-600 mb-2 inline-block font-medium">&larr; Back to Interactions</button>
+                        <div class="flex gap-2 items-center">
+                            <h2 class="text-2xl font-bold uppercase text-indigo-600" x-text="selectedInteraction.medium + ' Interaction'"></h2>
+                            <span class="px-2.5 py-0.5 rounded text-xs font-semibold" :class="getStatusBadgeClass(selectedInteraction.status)" x-text="selectedInteraction.status"></span>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-1" x-text="new Date(selectedInteraction.interaction_date || selectedInteraction.due_date).toLocaleString()"></p>
+                    </div>
+                    <button @click="editInteraction(selectedInteraction)" class="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-lg text-sm font-medium">Edit</button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-sm">
+                    <div>
+                        <span class="font-semibold text-gray-500 block">Organization</span> 
+                        <span class="text-indigo-600 cursor-pointer" @click="viewOrgDetail(selectedInteraction.organization_id)" x-text="getOrgName(selectedInteraction.organization_id)"></span>
+                    </div>
+                    <div>
+                        <span class="font-semibold text-gray-500 block">Assigned User</span> 
+                        <span class="text-gray-800" x-text="getPersonName(selectedInteraction.assigned_to)"></span>
+                    </div>
+                    <div>
+                        <span class="font-semibold text-gray-500 block">People Involved</span>
+                        <div class="flex flex-wrap gap-1 mt-1">
+                            <template x-for="pid in (selectedInteraction.people_ids || [])">
+                                <span class="bg-indigo-50 text-indigo-700 text-xs px-2 py-1 rounded cursor-pointer" @click="viewPersonDetail(pid)" x-text="getPersonName(pid)"></span>
+                            </template>
+                        </div>
+                    </div>
+                    <div class="md:col-span-2">
+                        <span class="font-semibold text-gray-500 block mb-1">Notes (Rich Text)</span>
+                        <div class="bg-gray-50 p-3 rounded border text-gray-700 whitespace-pre-wrap" x-text="selectedInteraction.notes || 'No notes.'"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Form View -->
+            <div x-show="viewMode === 'form'" class="bg-white p-6 rounded-xl shadow border max-w-2xl mx-auto">
+                <h2 class="text-xl font-bold mb-4" x-text="formInteraction.id ? 'Edit Interaction' : 'Log Interaction'"></h2>
+                <form @submit.prevent="saveInteraction()" class="space-y-4 text-sm">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block font-semibold mb-1">Medium *</label>
+                            <select x-model="formInteraction.medium" required class="w-full border p-2 rounded">
+                                <option value="">-- Select Medium --</option>
+                                <option value="email">Email</option>
+                                <option value="text">Text</option>
+                                <option value="call">Call</option>
+                                <option value="meeting">Meeting</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block font-semibold mb-1">Status *</label>
+                            <select x-model="formInteraction.status" required class="w-full border p-2 rounded">
+                                <option value="completed">Completed</option>
+                                <option value="upcoming">Upcoming</option>
+                                <option value="overdue">Overdue</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block font-semibold mb-1">Date & Time *</label>
+                            <input type="datetime-local" x-model="formInteraction.interaction_date" required class="w-full border p-2 rounded">
+                        </div>
+                        <div>
+                            <label class="block font-semibold mb-1">Assigned User *</label>
+                            <select x-model="formInteraction.assigned_to" required class="w-full border p-2 rounded">
+                                <option value="">-- Assign To --</option>
+                                <template x-for="p in people" :key="p.id">
+                                    <option :value="p.id" x-text="p.first_name + ' ' + p.last_name"></option>
+                                </template>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block font-semibold mb-1">Organization</label>
+                        <select x-model="formInteraction.organization_id" @change="onOrgChangeInForm()" class="w-full border p-2 rounded">
+                            <option value="">-- Select Organization --</option>
+                            <template x-for="org in orgs" :key="org.id">
+                                <option :value="org.id" x-text="org.name"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block font-semibold mb-1">People Involved (Filtered by Organization)</label>
+                        <select x-model="formInteraction.people_ids" multiple class="w-full border p-2 rounded h-32">
+                            <template x-for="p in getFilteredPeopleForForm()" :key="p.id">
+                                <option :value="p.id" x-text="p.first_name + ' ' + p.last_name + (p.role ? ' (' + p.role + ')' : '')"></option>
+                            </template>
+                        </select>
+                        <p class="text-xs text-gray-400 mt-1">Showing people belonging to the selected organization.</p>
+                    </div>
+
+                    <div>
+                        <label class="block font-semibold mb-1">Notes (Rich Text)</label>
+                        <textarea x-model="formInteraction.notes" rows="4" class="w-full border p-2 rounded"></textarea>
+                    </div>
+
+                    <div class="flex justify-end space-x-3 pt-4">
+                        <button type="button" @click="viewMode = formInteraction.id ? 'detail' : 'list'" class="bg-gray-100 px-4 py-2 rounded font-medium">Cancel</button>
+                        <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded font-medium hover:bg-indigo-700">Save Interaction</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- App Entrypoint Script Module -->
+    <script type="module" src="./js/app.js"></script>
+</body>
+</html>
